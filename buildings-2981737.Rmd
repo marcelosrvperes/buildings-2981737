@@ -1,0 +1,2523 @@
+---
+bibliography: refs2.bib
+fontsize: 12pt
+colorlinks: yes
+output:
+  pdf_document:
+    includes:
+      in_header:   doc_preamble2.tex
+      before_body: doc_before_body.tex
+      after_body:  doc_after_body.tex
+    fig_caption: yes
+    number_sections: yes
+
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+rm(list = ls())
+```
+
+
+```{r , include=FALSE}
+setwd("G:/Meu Drive/00-2024/17_Buildings")
+```
+
+
+
+```{r, include=FALSE}
+library(dplyr) 
+
+library(readr) 
+
+library(zoo) 
+
+library(caret) 
+
+library(ggplot2)
+
+library(Metrics) 
+
+library(ggpubr) 
+
+library(xtable) 
+
+library(caretEnsemble)
+
+library(rlang)
+
+library(tidyverse)
+
+library(GGally)
+
+library(corrplot)
+
+library("plot3D")
+
+library(xtable)
+
+library(gridExtra)
+
+library(MLmetrics)
+
+library(e1071)
+```
+
+
+```{r, include=FALSE}
+
+source("processo_total.R")
+
+source("numero_solos.R")
+
+source("unir_bd.R")
+
+source("encode_solos.R")
+
+source("Resultado_teste.R")
+```
+
+
+
+```{r , include=FALSE}
+
+Bruto <- read_csv("Bruto.csv")
+
+processo_total <- Processo_Total(Bruto)
+
+NSPT_Torres <- read_delim("NSPT_Torres.csv", 
+                          ";", escape_double = FALSE, trim_ws = TRUE)
+
+solos <- numero_solos(NSPT_Torres)
+
+Solos_BD <- unir_bd(processo_total,solos)
+
+df_solos <- Solos_BD
+
+
+df_solos$SOLO2[df_solos$SOLO == "Areia argilosa"] <- "Clayey sand"
+df_solos$SOLO2[df_solos$SOLO == "Silte argiloso"] <- "Clayey silt"
+df_solos$SOLO2[df_solos$SOLO == "Silte arenoso"] <- "Sandy silt"
+df_solos$SOLO2[df_solos$SOLO == "Argila arenosa"] <- "Sandy clay"
+df_solos$SOLO2[df_solos$SOLO == "Argila"] <- "Clay"
+df_solos$SOLO2[df_solos$SOLO == "Areia"] <- "Sand"
+
+Total_BD <- encode_solos(Solos_BD)
+
+base_Total <- Total_BD[order(Total_BD$TORRE, Total_BD$PE,Total_BD$CONTADOR),]
+
+base_Total
+```
+
+
+
+```{r, include=FALSE}
+
+data_ml <- select(base_Total,1:4,6:20,-13,-14,5)
+
+nome_data <- c("Contador","Torre","Pe","NSPTponta","Profundidade","NSPThelice","Nfuste","N1","N2","N3","N4","S1","S2","S3","S4","S5","S6", "Torque")
+
+colnames(data_ml) <- nome_data
+
+data_ml <- data_ml %>% group_by(Torre, Pe) %>% arrange(Torre)
+
+head(data_ml,20)
+
+```
+
+
+
+```{r}
+
+varmanuscript <- data_ml[,c(5,4,18)]
+colnames(varmanuscript)
+
+colnames(varmanuscript) <- c("Penetration","NSPTtip","Torque")
+
+```
+
+
+```{r}
+library(ggplot2)
+library(viridis)  # Carrega o pacote viridis para paletas de cores amigáveis para daltonismo
+
+fig2_v2 <- ggplot(varmanuscript, aes(x=Penetration, y=NSPTtip, color=Torque)) +
+  geom_point() +
+  labs(x="Penetration (m)", y="SPT index") +
+  theme_minimal() +
+  scale_color_viridis_c(option = "D") +  # Inverte a paleta de cores
+  theme(text = element_text(size = 16),  # Tamanho padrão para todo o texto
+        axis.title = element_text(size = 16),  # Tamanho do texto para títulos dos eixos
+        axis.text = element_text(size = 16))  # Tamanho do texto para rótulos dos eixos
+
+fig2_v2
+
+```
+
+```{r, echo=FALSE}
+
+data_initial <- data_ml[,c(5,4,18)]
+
+colnames(data_initial) <- c("Penetration","NSPTtip","Torque")
+
+knitr::kable(head(data_initial,10), caption = "Initial Dataset sample")
+
+```
+
+
+```{r fig-3,fig.cap = "Correlation between variables", echo = FALSE }
+data_paper <- data_ml[,c(4:18)]
+
+names(data_paper)[names(data_paper) == "NSPTponta"] <- "NSPTtip" 
+
+names(data_paper)[names(data_paper) == "Profundidade"] <- "P"
+
+names(data_paper)[names(data_paper) == "NSPThelice"] <- "NSPThelix"
+
+names(data_paper)[names(data_paper) == "Nfuste"] <- "Nshaft"
+
+basecorrpaper <- data_paper
+correlacao_spearman_paper <- cor(basecorrpaper,method="spearman")
+
+
+
+
+```
+
+```{r}
+corrplot(correlacao_spearman_paper,
+         method = "color",
+         #col = gray.colors(100), #escala de cinza
+         type = "upper", # somente a parte de cima
+         #method = "pie", # estilo torta
+         tl.cex = 1, # tamanho do texto t?tulos
+         number.digits = 3, # numero de digitos
+         addCoef.col = "black",
+         tl.col="black", # cor dos titulos em preto
+         number.cex = 0.5,# tamanho texto coeficientes
+         tl.srt = 45 # inclinação rótulos
+         )
+
+
+```
+
+```{r, echo=FALSE}
+# BD inicial
+data_initial <- data_ml[,c(5,4,18)]
+head(data_initial)
+
+```
+
+```{r}
+#BD completo
+data_completo <- data_ml[4:18]
+head(data_completo)
+```
+
+# Normalização
+
+
+```{r}
+# Função de normalização
+normalize <- function(x) {
+  return((x - min(x)) / (max(x) - min(x)))
+}
+
+# Normalizando data_initial
+data_initial_norm <- as.data.frame(lapply(data_initial[, c("Profundidade", "NSPTponta", "Torque")], normalize))
+
+# Normalizando data_completo, excluindo colunas dummy
+cols_to_normalize <- setdiff(names(data_completo), c('N1', 'N2', 'N3', 'N4', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'))
+data_completo_norm <- data_completo
+data_completo_norm[, cols_to_normalize] <- as.data.frame(lapply(data_completo[, cols_to_normalize], normalize))
+```
+
+
+```{r}
+summary(data_initial_norm)
+summary(data_completo_norm)
+```
+
+
+```{r}
+data_initial <- data_initial_norm
+data_completo <- data_completo_norm
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+# Define uma semente para garantir que os resultados sejam reprodutíveis
+set.seed(998)
+
+# Configura o controle de treinamento para o modelo usando validação cruzada com 3 folds
+# 'method = "cv"' especifica que a validação cruzada será utilizada
+# 'number = 3' define que a validação cruzada será realizada com 3 folds
+fitControl <- trainControl(method = "cv", number = 3)
+
+# Cria índices para a partição do conjunto de dados, destinando 80% dos dados para treinamento
+# 'p = .80' especifica que 80% dos dados são para treinamento
+# 'list = FALSE' garante que o resultado seja um vetor de índices, não uma lista
+# A função 'createDataPartition' realiza a divisão estratificada para manter a proporção
+# da variável resposta (Torque) consistente entre os conjuntos de treinamento e teste
+inTraining <- createDataPartition(data_initial$Torque, p = .80, list = FALSE)
+base_train_inicial <- data_initial[inTraining,]  # Cria o subconjunto de treinamento usando os índices
+base_test_inicial  <- data_initial[-inTraining,] # Cria o subconjunto de teste usando os índices complementares
+
+```
+
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Adiciona uma nova coluna para identificar o conjunto de dados
+base_train_inicial2 <- base_train_inicial %>%
+  mutate(Data_Set = "Training")
+
+base_test_inicial2 <- base_test_inicial %>%
+  mutate(Data_Set = "Testing")
+
+data_initial2 <- data_initial %>%
+  mutate(Data_Set = "Original")
+
+# Combina os três conjuntos de dados em um único dataframe para a plotagem
+combined_data <- bind_rows(base_train_inicial2, base_test_inicial2, data_initial2)
+
+```
+
+```{r}
+# Create the density plot to compare the distributions
+plot_across_data_sets <- ggplot(combined_data, aes(x = Torque, fill = Data_Set, color = Data_Set)) +
+  geom_density(alpha = 0.5, size = 0.5) +  # Set transparency and border size
+  labs(title = "Comparison of Torque Distribution Across Data Sets",
+       x = "Torque",
+       y = "Density") +
+  scale_fill_manual(values = c("Training" = "#1f77b4", "Testing" = "#ff7f0e", "Original" = "#2ca02c")) +
+  scale_color_manual(values = c("Training" = "#1f77b4", "Testing" = "#ff7f0e", "Original" = "#2ca02c")) +
+  theme_minimal() +
+  guides(fill = guide_legend(title = "Data Set"),
+         color = guide_legend(title = "Data Set")) +
+  theme(
+    text = element_text(size = 16), # Increases size of all text elements
+    axis.title = element_text(size = 16), # Customize axis titles size
+    legend.title = element_text(size = 16), # Customize legend title size
+    legend.text = element_text(size = 16) # Customize legend text size
+  )
+
+plot_across_data_sets
+
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+# LM
+model.lm <-  train(Torque~., data=base_train_inicial,
+                   trControl = fitControl,
+                   method = 'lm')
+```
+
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# SVM Radial
+
+set.seed(998)
+
+model.svmRadial <-  train(Torque~., data=base_train_inicial,
+                        trControl = fitControl,
+                         method = 'svmRadial')
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# KNN
+
+set.seed(998)
+model.kknn <-  train(Torque~., data=base_train_inicial,
+                     trControl = fitControl,
+                         method = 'kknn')
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+# Decision Trees
+
+set.seed(998)
+model.rpart2 <-  train(Torque~., data=base_train_inicial, 
+                      trControl = fitControl,
+                         method = 'rpart2')
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+#ANN
+
+set.seed(998)
+model.brnn <-  train(Torque~., data=base_train_inicial, 
+               trControl = fitControl,
+               method = "brnn", 
+               linout = TRUE)
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+#BAG
+
+set.seed(998)
+
+model.bagEarth <- train(Torque~., data=base_train_inicial, 
+                      trControl = fitControl,
+                      method = 'bagEarth')
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+#RF
+
+set.seed(998)
+
+model.rf <- train(Torque~., data=base_train_inicial, 
+                      trControl = fitControl,
+                      method = 'rf')
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+#BAG
+
+set.seed(998)
+
+model.xgbLinear <- train(Torque~., data=base_train_inicial, 
+                      trControl = fitControl,
+                      method = 'xgbLinear')
+                      # method = 'xgbDART')
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# Cubist
+
+set.seed(998)
+
+model.cubist <- train(Torque~., data=base_train_inicial, 
+                      trControl = fitControl,
+                      method = 'cubist')
+```
+
+
+
+
+```{r, echo=FALSE, include=FALSE}
+library(caret)
+
+
+# Evaluating models
+
+
+# Evaluate data set in training
+
+models_compare_total <- resamples(list(LM=model.lm,
+                SVM=model.svmRadial,
+                DT=model.rpart2,
+                KNN=model.kknn,
+                ANN=model.brnn,
+                BAG=model.bagEarth,
+                RF=model.rf,
+                BOO=model.xgbLinear,
+                CUB=model.cubist))
+
+
+# save(models_compare_total,file = "models_compare_total.RData")
+
+models_compare <- models_compare_total
+
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+
+matresults <- as.data.frame(models_compare[["values"]])
+matresults <- matresults[-1]
+mediaresults <- as.data.frame((colMeans(matresults)))
+
+
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+evaluatemae <- slice(mediaresults,1,4,7,10,13,16,19,22,25)
+evaluatemae$algoritmo <- c("LM","SVM", "DT", "KNN", "ANN", "BAG", "RF","BOO","CUB")
+
+evaluatermse <- slice(mediaresults,2,5,8,11,14,17,20,23,26)
+evaluatermse$algoritmo <-  c("LM","SVM", "DT", "KNN", "ANN", "BAG", "RF","BOO","CUB")
+
+evaluatersquared <- slice(mediaresults,3,6,9,12,15,18,21,24,27)
+evaluatersquared$algoritmo <-  c("LM","SVM", "DT", "KNN", "ANN", "BAG", "RF","BOO","CUB")
+
+
+evaluate1 <- merge(evaluatemae,evaluatermse,by="algoritmo")
+evaluate <- merge(evaluate1,evaluatersquared,by="algoritmo")
+colnames(evaluate) <- c("Algoritmo","MAE", "RMSE", "Rsquared")
+
+
+```
+
+
+
+
+```{r, echo=FALSE, include=FALSE }
+
+evaluate_train_total <- cbind(evaluate[1],round(evaluate[,-1],2))
+
+# evaluate_train_total
+
+evaluate_train <- evaluate_train_total
+
+evaluate_train <- evaluate_train %>%  mutate(Rank=rank(RMSE, ties.method= "first"))
+
+
+```
+
+```{r train_initial, echo=FALSE}
+
+knitr::kable(evaluate_train, caption = "Training stage for Initial Dataset", latex_options = c("repeat_header"))
+
+```
+
+
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# LM
+
+set.seed(998)
+predicao_lm_data <- data.frame(predict(model.lm,base_test_inicial))
+
+original <- data.frame(base_test_inicial["Torque"])
+
+resultados_lm <- cbind(predicao_lm_data,original)
+
+# MAE_TESTE <- resultados_lm %>% 
+#   mutate(MAE=(abs(resultados_lm$predicao_lm-resultados_lm$Torque )))
+# 
+# TESTE_MAE <- sum(MAE_TESTE$MAE)/nrow(MAE_TESTE)
+
+# RMSE_TESTE <- resultados_lm %>%
+#   mutate(RMSE=((resultados_lm$predicao_lm-resultados_lm$Torque)^2 ))
+# 
+#   TESTE_RMSE <- sqrt(mean(RMSE_TESTE$RMSE))
+
+# d = original-predicted
+# 
+# R2 = 1-(sum((d)^2)/sum((original-mean(original))^2))
+
+
+Test_result_lm <- Resultados_teste(resultados_lm)
+Test_result_lm <- as.data.frame(Test_result_lm)
+Test_result_lm$Algoritmo <- c("LM")
+
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# SVM
+
+set.seed(998)
+predicao_svm_data <- data.frame(predict(model.svmRadial,base_test_inicial))
+
+original <- data.frame(base_test_inicial["Torque"])
+
+resultados_svm <- cbind(predicao_svm_data,original)
+
+Test_result_svm <- Resultados_teste(resultados_svm)
+Test_result_svm <- as.data.frame(Test_result_svm)
+Test_result_svm$Algoritmo <- c("SVM")
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# KNN
+set.seed(998)
+predicao_kknn_data <- data.frame(predict(model.kknn,base_test_inicial))
+
+original <- data.frame(base_test_inicial["Torque"])
+
+resultados_kknn <- cbind(predicao_kknn_data,original)
+
+Test_result_kknn <- Resultados_teste(resultados_kknn)
+Test_result_kknn <- as.data.frame(Test_result_kknn)
+Test_result_kknn$Algoritmo <- c("KNN")
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+
+# DT
+
+set.seed(998)
+predicao_rpart_data <- data.frame(predict(model.rpart2,base_test_inicial))
+
+original <- data.frame(base_test_inicial["Torque"])
+
+resultados_rpart <- cbind(predicao_rpart_data,original)
+
+Test_result_rpart <- Resultados_teste(resultados_rpart)
+Test_result_rpart <- as.data.frame(Test_result_rpart)
+Test_result_rpart$Algoritmo <- c("DT")
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+
+# ANN
+set.seed(998)
+predicao_nnet_data <- data.frame(predict(model.brnn,base_test_inicial))
+
+original <- data.frame(base_test_inicial["Torque"])
+
+resultados_nnet <- cbind(predicao_nnet_data,original)
+
+Test_result_nnet <- Resultados_teste(resultados_nnet)
+Test_result_nnet <- as.data.frame(Test_result_nnet)
+Test_result_nnet$Algoritmo <- c("ANN")
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# BAG
+
+set.seed(998)
+predicao_bag_data <- data.frame(predict(model.bagEarth,base_test_inicial))
+
+original <- data.frame(base_test_inicial["Torque"])
+
+resultados_bag<- cbind(predicao_bag_data,original)
+
+Test_result_bag <- Resultados_teste(resultados_bag)
+Test_result_bag <- as.data.frame(Test_result_bag)
+Test_result_bag$Algoritmo <- c("BAG")
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# RF
+
+set.seed(998)
+predicao_random_data <- data.frame(predict(model.rf,base_test_inicial))
+
+original <- data.frame(base_test_inicial["Torque"])
+
+resultados_random <- cbind(predicao_random_data,original)
+
+Test_result_random <- Resultados_teste(resultados_random)
+Test_result_random <- as.data.frame(Test_result_random)
+Test_result_random$Algoritmo <- c("RF")
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# BOO
+
+set.seed(998)
+predicao_boo_data <- data.frame(predict(model.xgbLinear,base_test_inicial))
+
+original <- data.frame(base_test_inicial["Torque"])
+
+resultados_boo <- cbind(predicao_boo_data,original)
+
+Test_result_boo <- Resultados_teste(resultados_boo)
+Test_result_boo <- as.data.frame(Test_result_boo)
+Test_result_boo$Algoritmo <- c("BOO")
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# CUB
+
+set.seed(998)
+predicao_cub_data <- data.frame(predict(model.cubist,base_test_inicial))
+
+original <- data.frame(base_test_inicial["Torque"])
+
+resultados_cub <- cbind(predicao_cub_data,original)
+
+Test_result_cub <- Resultados_teste(resultados_cub)
+Test_result_cub <- as.data.frame(Test_result_cub)
+Test_result_cub$Algoritmo <- c("CUB")
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+Avaliacao_teste_total <- rbind(Test_result_nnet,
+                               Test_result_bag,
+                               Test_result_boo,
+                               Test_result_cub,
+                               Test_result_rpart,
+                               Test_result_kknn,
+                               Test_result_lm,
+                               Test_result_random,
+                               Test_result_svm)
+
+Avaliacao_teste <- Avaliacao_teste_total %>% select(4,1,2,3)
+
+Avaliacao_teste <- Avaliacao_teste %>%  mutate(Rank=rank(RMSE, ties.method= "first"))
+
+```
+
+```{r test_initial, echo=FALSE}
+
+knitr::kable(Avaliacao_teste, caption = "Test stage for Initial Dataset", latex_options = c("repeat_header"))
+
+```
+
+```{r}
+
+```
+
+
+
+
+#####Dataset Complete
+
+```{r, echo=FALSE, include=FALSE}
+
+
+# 3.2 Split the dataset in training (0.80) and test (0.20) Complete Dataset
+
+
+set.seed(998)
+  inTraining <- createDataPartition(data_completo$Torque, p = .80, list = FALSE)
+base_train_completo <- data_completo[ inTraining,]
+base_test_completo  <- data_completo[-inTraining,]
+
+
+
+
+# Basic parameter tuning
+
+
+set.seed(998)
+fitControl <- trainControl(## 3-fold CV
+                           method = "cv",
+                           number = 3)
+
+
+
+# Linear regression Complete
+
+
+
+set.seed(998)
+model.lm_completo <-  train(Torque~., data=base_train_completo,
+                   trControl = fitControl,
+                   method = 'lm')
+
+
+
+
+# SVM Radial Complet
+
+
+set.seed(998)
+
+model.svmRadial_completo <-  train(Torque~., data=base_train_completo,
+                        trControl = fitControl,
+                         method = 'svmRadial')
+
+# KNN Complet
+
+
+set.seed(998)
+model.kknn_completo <-  train(Torque~., data=base_train_completo,
+                     trControl = fitControl,
+                         method = 'kknn')
+
+
+
+# Decision Trees Complet
+
+
+set.seed(998)
+model.rpart2_completo <-  train(Torque~., data=base_train_completo, 
+                      trControl = fitControl,
+                         method = 'rpart2')
+
+
+
+# Redes Neurais Complet - Bayesian Regularized Neural Networks 
+
+
+set.seed(998)
+model.brnn_completo <-  train(Torque~., data=base_train_completo, 
+               trControl = fitControl,
+               method = "brnn", 
+               linout = TRUE)
+
+
+
+# 6 Bagging Complet - Bagged MARS bagEarth
+
+
+set.seed(998)
+
+model.bagEarth_completo <- train(Torque~., data=base_train_completo, 
+                      trControl = fitControl,
+                      method = 'bagEarth')
+
+
+# 7 Random forest Complet
+
+
+set.seed(998)
+
+model.rf_completo <- train(Torque~., data=base_train_completo, 
+                      trControl = fitControl,
+                      method = 'rf')
+
+
+# Boosting Complet - EXtreme Gradient Boosting xgbDART
+
+
+set.seed(998)
+
+model.xgbLinear_completo <- train(Torque~., data=base_train_completo, 
+                      trControl = fitControl,
+                      method = 'xgbLinear')
+                      # method = 'xgbDART')
+
+
+# 8 Cubist Complet
+
+
+set.seed(998)
+
+model.cubist_completo <- train(Torque~., data=base_train_completo, 
+                      trControl = fitControl,
+                      method = 'cubist')
+
+
+# Evaluating models in training Dataset Complete
+
+# Evaluate in folds
+
+
+library(caret)
+
+models_compare_total_completo <- resamples(list(LM=model.lm_completo,
+                SVM=model.svmRadial_completo,
+                DT=model.rpart2_completo,
+                KNN=model.kknn_completo,
+                ANN=model.brnn_completo,
+                BAG=model.bagEarth_completo,
+                RF=model.rf_completo,
+                BOO=model.xgbLinear_completo,
+                CUB=model.cubist_completo))
+
+```
+
+```{r, echo=FALSE, include=FALSE}
+
+# save(models_compare_total,file = "models_compare_total.RData")
+
+models_compare_completo <- models_compare_total_completo
+
+
+
+# Models Results Mean
+
+summary(models_compare_completo)
+
+matresults_completo <- as.data.frame(models_compare_completo[["values"]])
+matresults_completo <- matresults_completo[-1]
+mediaresults_completo <- as.data.frame((colMeans(matresults_completo)))
+mediaresults_completo
+
+
+# Subset in result values
+
+# Rsquared
+
+
+evaluatemae_completo <- slice(mediaresults_completo,1,4,7,10,13,16,19,22,25)
+evaluatemae_completo$algoritmo <- c("LM","SVM", "DT", "KNN", "ANN", "BAG", "RF","BOO","CUB")
+evaluatemae_completo
+evaluatermse_completo <- slice(mediaresults_completo,2,5,8,11,14,17,20,23,26)
+evaluatermse_completo$algoritmo <-  c("LM","SVM", "DT", "KNN", "ANN", "BAG", "RF","BOO","CUB")
+evaluatermse_completo
+evaluatersquared_completo <- slice(mediaresults_completo,3,6,9,12,15,18,21,24,27)
+evaluatersquared_completo$algoritmo <-  c("LM","SVM", "DT", "KNN", "ANN", "BAG", "RF","BOO","CUB")
+evaluatersquared_completo
+
+evaluate1_completo <- merge(evaluatemae_completo,evaluatermse_completo,by="algoritmo")
+evaluate_completo <- merge(evaluate1_completo,evaluatersquared_completo,by="algoritmo")
+colnames(evaluate_completo) <- c("Algoritmo","MAE", "RMSE", "Rsquared")
+
+
+
+# TABLE 7. Training stage for Complete Dataset
+
+
+evaluate_train_total_completo <- cbind(evaluate_completo[1],round(evaluate_completo[,-1],2))
+
+evaluate_train_total_completo
+
+evaluate_train_completo <- evaluate_train_total_completo
+
+evaluate_train_completo <- evaluate_train_completo %>%  mutate(Rank=rank(RMSE, ties.method= "first"))
+
+```
+
+
+```{r complete_train, echo=FALSE}
+
+knitr::kable(evaluate_train_completo, caption = "Training stage for Complete Datase", latex_options = c("repeat_header"))
+
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# Evaluating models in test Dataset Complete
+
+# LM
+
+set.seed(998)
+predicao_lm_data_completo <- data.frame(predict(model.lm_completo,base_test_completo))
+
+original_completo <- data.frame(base_test_completo["Torque"])
+
+resultados_lm_completo <- cbind(predicao_lm_data_completo,original_completo)
+
+# MAE_TESTE <- resultados_lm %>% 
+#   mutate(MAE=(abs(resultados_lm$predicao_lm-resultados_lm$Torque )))
+# 
+# TESTE_MAE <- sum(MAE_TESTE$MAE)/nrow(MAE_TESTE)
+
+# RMSE_TESTE <- resultados_lm %>%
+#   mutate(RMSE=((resultados_lm$predicao_lm-resultados_lm$Torque)^2 ))
+# 
+#   TESTE_RMSE <- sqrt(mean(RMSE_TESTE$RMSE))
+
+# d = original-predicted
+# 
+# R2 = 1-(sum((d)^2)/sum((original-mean(original))^2))
+
+
+Test_result_lm_completo <- Resultados_teste(resultados_lm_completo)
+Test_result_lm_completo <- as.data.frame(Test_result_lm_completo)
+Test_result_lm_completo$Algoritmo <- c("LM")
+
+
+# SVM
+
+
+set.seed(998)
+predicao_svm_data_completo <- data.frame(predict(model.svmRadial_completo,base_test_completo))
+
+resultados_svm_completo <- cbind(predicao_svm_data_completo,original_completo)
+
+Test_result_svm_completo <- Resultados_teste(resultados_svm_completo)
+Test_result_svm_completo <- as.data.frame(Test_result_svm_completo)
+Test_result_svm_completo$Algoritmo <- c("SVM")
+
+
+# KNN
+
+
+set.seed(998)
+predicao_kknn_data_completo <- data.frame(predict(model.kknn_completo,base_test_completo))
+
+
+resultados_kknn_completo <- cbind(predicao_kknn_data_completo,original_completo)
+
+Test_result_kknn_completo <- Resultados_teste(resultados_kknn_completo)
+Test_result_kknn_completo <- as.data.frame(Test_result_kknn_completo)
+Test_result_kknn_completo$Algoritmo <- c("KNN")
+
+
+# DT
+
+
+set.seed(998)
+predicao_rpart_data_completo <- data.frame(predict(model.rpart2_completo,base_test_completo))
+
+
+resultados_rpart_completo <- cbind(predicao_rpart_data_completo,original_completo)
+
+Test_result_rpart_completo <- Resultados_teste(resultados_rpart_completo)
+Test_result_rpart_completo <- as.data.frame(Test_result_rpart_completo)
+Test_result_rpart_completo$Algoritmo <- c("DT")
+
+
+# ANN
+
+
+set.seed(998)
+predicao_nnet_data_completo <- data.frame(predict(model.brnn_completo,base_test_completo))
+
+
+resultados_nnet_completo <- cbind(predicao_nnet_data_completo,original_completo)
+
+Test_result_nnet_completo <- Resultados_teste(resultados_nnet_completo)
+Test_result_nnet_completo <- as.data.frame(Test_result_nnet_completo)
+Test_result_nnet_completo$Algoritmo <- c("ANN")
+
+
+# BAGGING
+
+
+set.seed(998)
+predicao_bag_data_completo <- data.frame(predict(model.bagEarth_completo,base_test_completo))
+
+
+resultados_bag_completo<- cbind(predicao_bag_data_completo,original_completo)
+
+Test_result_bag_completo <- Resultados_teste(resultados_bag_completo)
+Test_result_bag_completo <- as.data.frame(Test_result_bag_completo)
+Test_result_bag_completo$Algoritmo <- c("BAG")
+
+
+# RF
+
+
+set.seed(998)
+predicao_random_data_completo <- data.frame(predict(model.rf_completo,base_test_completo))
+
+
+resultados_random_completo <- cbind(predicao_random_data_completo,original_completo)
+
+Test_result_random_completo <- Resultados_teste(resultados_random_completo)
+Test_result_random_completo <- as.data.frame(Test_result_random_completo)
+Test_result_random_completo$Algoritmo <- c("RF")
+
+
+#8 BOOSTING
+
+
+set.seed(998)
+predicao_boo_data_completo <- data.frame(predict(model.xgbLinear_completo,base_test_completo))
+
+resultados_boo_completo <- cbind(predicao_boo_data_completo,original_completo)
+
+Test_result_boo_completo <- Resultados_teste(resultados_boo_completo)
+Test_result_boo_completo <- as.data.frame(Test_result_boo_completo)
+Test_result_boo_completo$Algoritmo <- c("BOO")
+
+
+#9 CUBIST
+
+
+set.seed(998)
+predicao_cub_data_completo <- data.frame(predict(model.cubist_completo,base_test_completo))
+
+resultados_cub_completo <- cbind(predicao_cub_data_completo,original_completo)
+
+Test_result_cub_completo <- Resultados_teste(resultados_cub_completo)
+Test_result_cub_completo <- as.data.frame(Test_result_cub_completo)
+Test_result_cub_completo$Algoritmo <- c("CUB")
+
+
+Avaliacao_teste_total_completo <- rbind(Test_result_nnet_completo,
+                               Test_result_bag_completo,
+                               Test_result_boo_completo,
+                               Test_result_cub_completo,
+                               Test_result_rpart_completo,
+                               Test_result_kknn_completo,
+                               Test_result_lm_completo,
+                               Test_result_random_completo,
+                               Test_result_svm_completo)
+
+Avaliacao_teste_completo <- Avaliacao_teste_total_completo %>% select(4,1,2,3)
+
+Avaliacao_teste_completo <- Avaliacao_teste_completo %>%  mutate(Rank=rank(RMSE, ties.method= "first"))
+
+
+```
+
+```{r complete_test, echo=FALSE}
+
+knitr::kable(Avaliacao_teste_completo, caption = "Test stage for Complete Dataset", latex_options = c("repeat_header"))
+
+```
+
+
+
+
+######Juntando os resultados
+
+```{r train_initial, echo=FALSE}
+
+knitr::kable(evaluate_train, caption = "Training stage for Initial Dataset", latex_options = c("repeat_header"))
+
+```
+
+```{r test_initial, echo=FALSE}
+
+knitr::kable(Avaliacao_teste, caption = "Test stage for Initial Dataset", latex_options = c("repeat_header"))
+
+```
+
+```{r complete_train, echo=FALSE}
+
+knitr::kable(evaluate_train_completo, caption = "Training stage for Complete Datase", latex_options = c("repeat_header"))
+
+```
+
+```{r complete_test, echo=FALSE}
+
+knitr::kable(Avaliacao_teste_completo, caption = "Test stage for Complete Dataset", latex_options = c("repeat_header"))
+
+```
+
+```{r}
+evaluate_train
+Avaliacao_teste
+evaluate_train_completo
+Avaliacao_teste_completo
+```
+
+```{r}
+# Nomeando os dataframes para identificação
+train_initial <- evaluate_train
+test_initial <- Avaliacao_teste
+train_complete <- evaluate_train_completo
+test_complete <- Avaliacao_teste_completo
+
+# Adicionando uma nova coluna para especificar o conjunto de dados
+train_initial$Dataset <- "train initial"
+test_initial$Dataset <- "test initial"
+train_complete$Dataset <- "train complete"
+test_complete$Dataset <- "test complete"
+
+# Renomeando a coluna R2 para Rsquared nos dataframes onde ela aparece diferente
+names(test_initial)[names(test_initial) == "R2"] <- "Rsquared"
+names(test_complete)[names(test_complete) == "R2"] <- "Rsquared"
+
+# Adicionando a coluna Dataset
+train_initial$Dataset <- "initial"
+test_initial$Dataset <- "initial"
+train_complete$Dataset <- "complete"
+test_complete$Dataset <- "complete"
+
+# Adicionando a coluna Part
+train_initial$Part <- "train"
+test_initial$Part <- "test"
+train_complete$Part <- "train"
+test_complete$Part <- "test"
+
+# Combinando todos os dataframes
+evaluate_models_combined <- rbind(train_initial, test_initial, train_complete, test_complete)
+
+# Visualizando as primeiras linhas para confirmar a organização
+head(evaluate_models_combined)
+
+```
+
+```{r}
+initial_data <- evaluate_models_combined %>% 
+  filter(Dataset=="initial")
+
+complete_data <- evaluate_models_combined %>% 
+  filter(Dataset=="complete")
+```
+
+
+```{r}
+library(gridExtra)
+library(RColorBrewer)
+# Definindo cores amigáveis para daltonismo
+colors_daltonic <- brewer.pal(8, "Set2")  # Uma paleta com boa distinção
+```
+
+
+```{r}
+# Determinando os limites máximos para cada métrica
+max_mae <- max(initial_data$MAE, complete_data$MAE)
+max_rmse <- max(initial_data$RMSE, complete_data$RMSE)
+max_rsquared <- max(initial_data$Rsquared, complete_data$Rsquared)
+
+# Criando os gráficos para o conjunto "initial"
+mae_plot_initial <- ggplot(initial_data, aes(x=Algoritmo, y=MAE, fill=Part)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(title="Initial", x=NULL, y="MAE") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  scale_fill_manual(values=colors_daltonic[1:2]) +
+  ylim(0, max_mae)  # Definindo o mesmo limite para MAE
+
+rmse_plot_initial <- ggplot(initial_data, aes(x=Algoritmo, y=RMSE, fill=Part)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(title="Initial", x=NULL, y="RMSE") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  scale_fill_manual(values=colors_daltonic[1:2]) +
+  ylim(0, max_rmse)  # Definindo o mesmo limite para RMSE
+
+rsquared_plot_initial <- ggplot(initial_data, aes(x=Algoritmo, y=Rsquared, fill=Part)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(title="Initial", x=NULL, y="R²") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  scale_fill_manual(values=colors_daltonic[1:2]) +
+  ylim(0, max_rsquared)  # Definindo o mesmo limite para R²
+
+# Criando os gráficos para o conjunto "complete"
+mae_plot_complete <- ggplot(complete_data, aes(x=Algoritmo, y=MAE, fill=Part)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(title="Complete", x=NULL, y="MAE") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  scale_fill_manual(values=colors_daltonic[3:4]) +
+  ylim(0, max_mae)  # Usando os mesmos limites
+
+rmse_plot_complete <- ggplot(complete_data, aes(x=Algoritmo, y=RMSE, fill=Part)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(title="Complete", x=NULL, y="RMSE") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  scale_fill_manual(values=colors_daltonic[3:4]) +
+  ylim(0, max_rmse)  # Usando os mesmos limites
+
+rsquared_plot_complete <- ggplot(complete_data, aes(x=Algoritmo, y=Rsquared, fill=Part)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(title="Complete", x=NULL, y="R²") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+  scale_fill_manual(values=colors_daltonic[3:4]) +
+  ylim(0, max_rsquared)  # Usando os mesmos limites
+
+# Combinando os gráficos em um painel
+plot_combined <- grid.arrange(
+  gridExtra::arrangeGrob(mae_plot_initial, rmse_plot_initial, rsquared_plot_initial, ncol=1),
+  gridExtra::arrangeGrob(mae_plot_complete, rmse_plot_complete, rsquared_plot_complete, ncol=1),
+  ncol=2
+)
+
+
+```
+
+```{r}
+# Salvando o painel como PDF
+ggsave("fig12_v3.pdf", plot_combined, device = "pdf", width = 8, height = 6, units = "in")
+```
+
+
+
+```{r}
+
+
+# VarImp 3 models
+
+
+varImp(model.xgbLinear_completo)
+
+
+varImp(model.cubist_completo)
+
+
+# varImp(model.rf_completo)
+
+
+
+# join varimplot in the same plot
+
+
+# a <- varImp(model.rf_completo)
+b <- varImp(model.cubist_completo)
+c <- varImp(model.xgbLinear_completo)
+
+
+
+## transform in data frame
+
+# var_impor_rf <- as.data.frame(a[["importance"]])
+var_impor_cubist <- b[["importance"]]
+var_impor_boost <- c[["importance"]]
+
+# var_impor_rf 
+var_impor_cubist 
+var_impor_boost 
+
+# rownames(var_impor_rf)
+
+rownames(var_impor_cubist)
+
+rownames(var_impor_boost)
+
+# rownames(var_impor_rf) <- c("NSPTtip", "Penetration", "NSPThelix", "Nshaft", "N1", "N2", "N3", "N4",  "S1",  "S2", "S3","S4", "S5", "S6")
+
+rownames(var_impor_cubist )<- c("Penetration", "N4", "N1","N2","Nshaft", "N3","NSPTtip", "S3",  "NSPThelix",  "S4", "S2", "S6" ,  "S1",  "S5")
+
+rownames(var_impor_boost)<- c("Penetration", "N1", "NSPThelix", "N4","N2","Nshaft","NSPTtip", "N3","S1","S4", "S3", "S2", "S6" , "S5")
+
+
+# juntado varImp para plotar
+
+
+MyMerge       <- function(x, y){
+  df            <- merge(x, y, by= "row.names", all.x= F, all.y= F)
+  rownames(df)  <- df$Row.names
+  df$Row.names  <- NULL
+  return(df)
+}
+
+# dat <- Reduce(MyMerge, list(var_impor_rf, var_impor_cubist, var_impor_boost ))
+# 
+# nomesdat <- c("Importância RF", "Importância CUB","Importância BOO")
+# 
+# colnames(dat) <- nomesdat
+# 
+# dat
+# 
+# Paper
+
+
+# Aqui tirei random Forest
+# dat <- Reduce(MyMerge, list(var_impor_rf, var_impor_cubist, var_impor_boost ))
+# 
+# nomesdat <- c("Importance RF", "Importance CUB","Importence BOO")
+# 
+# colnames(dat) <- nomesdat
+# 
+# dat
+
+dat <- Reduce(MyMerge, list(var_impor_cubist, var_impor_boost ))
+
+nomesdat <- c("Importance CUB","Importence BOO")
+
+colnames(dat) <- nomesdat
+
+dat
+
+
+#molten
+
+
+dat[ "Variables" ] <- rownames(dat)
+# df.molten <- melt( dat, id.vars="day", value.name="Enrichment", variable.name="Antibiotics" )
+
+
+
+# Fig. 12. Variable importance for three models
+
+dat_2 <- dat %>%
+  gather(Total, Value, -Variables)
+
+
+dat_2
+
+```
+
+
+
+
+
+```{r}
+plot_importance <- ggplot(dat_2, aes(x = Variables, y = Value, fill = Total))+ 
+  ggtitle("Variable importance three models")+
+  geom_col(position = "dodge")+ 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+  scale_fill_viridis_d() +  # Usando a paleta Viridis por padrão
+  labs(x="Variables", y= "Values (%)")
+
+plot_importance
+
+```
+
+
+```{r}
+pdf("fig13_v3.pdf")
+plot_importance
+dev.off()
+```
+
+
+
+
+# Modelo com o data Contribuition
+
+```{r}
+library(caret)
+
+# Preparando os dados
+data_contribuition <- data_ml[,c(4:11,18)]
+
+# Definindo a semente para reprodutibilidade
+set.seed(998)
+
+# Criando partições de treino e teste
+inTraining <- createDataPartition(data_contribuition$Torque, p = .80, list = FALSE)
+base_train_contribuition <- data_contribuition[inTraining,]
+base_test_contribuition  <- data_contribuition[-inTraining,]
+
+# Configuração do controle de treinamento com validação cruzada de 3-folds
+fitControl <- trainControl(method = "cv", number = 3)
+
+```
+
+```{r}
+head(data_contribuition)
+```
+
+```{r}
+# Função de normalização
+normalize <- function(x) {
+  return((x - min(x)) / (max(x) - min(x)))
+}
+```
+
+```{r}
+# Aplica a função de normalização às colunas selecionadas, mantendo N1, N2, N3 e N4 sem alterações
+data_contribuition_normalized <- data_contribuition %>%
+  mutate(
+    NSPTponta = normalize(NSPTponta),
+    Profundidade = normalize(Profundidade),
+    NSPThelice = normalize(NSPThelice),
+    Nfuste = normalize(Nfuste),
+    Torque = normalize(Torque),
+    N1 = N1,
+    N2 = N2,
+    N3 = N3,
+    N4 = N4
+  )
+
+# Visualiza as primeiras linhas do novo banco de dados normalizado
+head(data_contribuition_normalized)
+```
+
+```{r}
+set.seed(998)
+  inTraining <- createDataPartition(data_contribuition_normalized$Torque, p = .80, list = FALSE)
+base_train_contribuition_normalized <- data_contribuition_normalized[ inTraining,]
+base_test_contribuition_normalized  <- data_contribuition_normalized[-inTraining,]
+```
+
+```{r}
+# Best 2 models with Contribution Dataset
+
+# 1.1 Basic parameter tuning
+set.seed(998)
+
+fitControl <- trainControl(## 3-fold CV
+                           method = "cv",
+                           number = 3)
+```
+
+
+```{r}
+# Grid de parâmetros
+# tunegrid_xgbLinear <- expand.grid(
+#   nrounds = c(50, 100, 150, 200, 250, 300),
+#   lambda = c(0, 0.5, 1, 1.5, 2),
+#   alpha = c(0, 0.35, 0.7, 1, 1.5),
+#   eta = c(0.01, 0.05, 0.1, 0.2, 0.3, 1)
+# )
+# 
+# model.best_xgbLinear <- caret::train(Torque~., data=base_train_contribuition, 
+#                               trControl = fitControl,
+#                               tuneGrid=tunegrid_xgbLinear,
+#                               method = 'xgbLinear')
+# 
+# result_best_boo <- as.data.frame(model.best_xgbLinear[["results"]])
+```
+
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+
+# Configuração do controle de treinamento
+fitControl <- caret::trainControl(
+  method = "cv",
+  number = 3
+)
+
+set.seed(998)
+
+# # Grid de parâmetros
+# tunegrid_xgbLinear <- expand.grid(
+#   nrounds = c(50, 100, 150, 200, 250, 300, 350),
+#   lambda = c(0, 0.5, 1, 1.5, 2),
+#   alpha = c(0, 0.35, 0.7, 1, 1.5),
+#   eta = c(0, 0.001, 0.01, 0.05, 0.1, 0.2, 0.3, 1)
+# )
+
+
+
+# Grid de parâmetros
+tunegrid_xgbLinear <- expand.grid(
+  nrounds=100,
+  lambda=0,
+  alpha=1,
+  eta=0.01
+)
+
+
+
+
+# Treinamento do modelo com parâmetros do grid
+tempo <- system.time({
+  model.best_xgbLinear_normalized <- caret::train(
+    Torque~., 
+    data = base_train_contribuition_normalized, 
+    trControl = fitControl,
+    tuneGrid = tunegrid_xgbLinear,
+    method = 'xgbLinear'
+  )
+})
+
+# Exibir os resultados do modelo
+print(model.best_xgbLinear_normalized)
+
+
+```
+
+
+```{r}
+# Ver o melhor modelo
+print(model.best_xgbLinear_normalized)
+
+
+
+result_best_boo <-as.data.frame(model.best_xgbLinear_normalized[["results"]])
+
+
+# print(result_best_boo[c(1,6,25,35,50,75,100),c(1,2,3,4,7,5,6)] )
+```
+
+
+
+```{r}
+# 3 Cubist cubist
+
+
+set.seed(998)
+
+# Definir o grid de parâmetros com sequências de 1 em 1
+# grid_cubist <- expand.grid(committees = seq(1, 100, by = 1),
+#                            neighbors = seq(0, 9, by = 1))
+
+
+grid_cubist <- expand.grid(committees = 92,
+                           neighbors = 0)
+
+
+# Medir o tempo de treinamento do modelo Cubist
+tempo_cubist <- system.time({
+  model.best_cubist_normalized <- train(Torque~., data=base_train_contribuition_normalized, 
+                             trControl = fitControl,
+                             tuneGrid = grid_cubist,
+                             method = 'cubist')
+})
+
+
+evaluate_cubist <- as.data.frame(model.best_cubist_normalized[["results"]])
+
+evaluate_cubist <- evaluate_cubist %>% dplyr::select(1,2,5,3,4)
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+# Best parameters
+
+
+result_contrib_boo <- model.best_xgbLinear_normalized[["results"]]
+
+result_contrib_cub <- model.best_cubist_normalized[["results"]]
+
+# result_contrib_rf <- model.best_rf[["results"]]
+
+
+result_contrib_boo1 <- subset(result_contrib_boo, RMSE==min(RMSE, na.rm=TRUE))
+
+result_contrib_cub1 <- subset(result_contrib_cub, RMSE==min(RMSE, na.rm=TRUE))
+
+# result_contrib_rf1 <- subset(result_contrib_rf, RMSE==min(RMSE, na.rm=TRUE))
+
+
+
+evaluate_contribution_boo <- result_contrib_boo1[1,c(7,5,6)]
+
+evaluate_contribution_cub <- result_contrib_cub1[,c(5,3,4)]
+
+# evaluate_contribution_rf <- result_contrib_rf1[,c(4,2,3)]
+
+names_evaluate_contribution <- c("BOO", "CUB")
+
+
+
+evaluate_contribution <- rbind(evaluate_contribution_boo,evaluate_contribution_cub)
+
+evaluate_contribution$Algoritm <- names_evaluate_contribution
+
+evaluate_contribution2 <- evaluate_contribution[,c(4,1,2,3)]
+
+
+```
+
+```{r}
+knitr::kable(evaluate_contribution2, caption = "Training stage for Contribution Dataset", latex_options = c("repeat_header"),digits=c(0,2,2,2))
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# Predicted vs observed
+
+## RF
+# set.seed(998)
+# predicao_random_data2 <- data.frame(predict(model.best_rf,base_test_contribuition))
+# 
+original2 <- data.frame(base_test_contribuition["Torque"])
+# 
+# resultados_random2 <- cbind(predicao_random_data2,original2)
+# 
+# 
+# Test_result_random2 <- Resultados_teste(resultados_random2)
+# Test_result_random2 <- as.data.frame(Test_result_random2)
+# Test_result_random2$Algoritmo <- c("RF")
+
+
+# BOO
+
+set.seed(998)
+predicao_boo_data2 <- data.frame(predict(model.best_xgbLinear_normalized,base_test_contribuition))
+
+resultados_boo2 <- cbind(predicao_boo_data2,original2)
+
+Test_result_boo2 <- Resultados_teste(resultados_boo2)
+Test_result_boo2 <- as.data.frame(Test_result_boo2)
+Test_result_boo2$Algoritmo <- c("BOO")
+
+
+#9 CUBIST
+
+
+set.seed(998)
+predicao_cub_data2 <- data.frame(predict(model.best_cubist_normalized,base_test_contribuition))
+
+
+resultados_cub2 <- cbind(predicao_cub_data2,original2)
+
+Test_result_cub2 <- Resultados_teste(resultados_cub2)
+Test_result_cub2 <- as.data.frame(Test_result_cub2)
+Test_result_cub2$Algoritmo <- c("CUB")
+
+
+
+# TABLE 10. Test stage for Contribution Dataset
+
+
+Avaliacao_teste_total2 <- rbind(Test_result_boo2,
+                               Test_result_cub2)
+
+
+
+Avaliacao_teste2 <- Avaliacao_teste_total2 %>% dplyr::select(4,1,2,3)
+
+```
+
+```{r sensitive_test, echo=FALSE}
+
+knitr::kable(Avaliacao_teste2, caption = "Test stage for Contribution Dataset", latex_options = c("repeat_header"),digits=c(0,2,2,2))
+
+```
+
+
+```{r}
+evaluate_contribution2
+Avaliacao_teste2
+```
+
+```{r}
+# Carregar pacote necessário
+library(xtable)
+
+# Ajustar os nomes das colunas para correspondência
+names(evaluate_contribution2)[names(evaluate_contribution2) == "Algoritm"] <- "Algorithm"
+names(Avaliacao_teste2)[names(Avaliacao_teste2) == "Algoritmo"] <- "Algorithm"
+
+# Unir os dados de treinamento e teste
+combined_data <- merge(evaluate_contribution2, Avaliacao_teste2, by = "Algorithm")
+
+# Renomear colunas para ajustar na tabela LaTeX
+names(combined_data) <- c("Algorithm", "MAE_Train", "RMSE_Train", "R2_Train", "MAE_Test", "RMSE_Test", "R2_Test")
+
+
+print(combined_data)
+```
+
+
+
+
+```{r}
+nomes_predicted <- c("Predicted", "Observed")
+
+# Fig. 13. Predicted and observed values.
+
+# colnames(resultados_random2) <- nomes_predicted
+
+colnames(resultados_boo2) <- nomes_predicted
+
+colnames(resultados_cub2) <- nomes_predicted
+```
+
+
+
+
+
+```{r}
+# Função para desnormalizar
+denormalize <- function(x, min_x, max_x) {
+  return(x * (max_x - min_x) + min_x)
+}
+
+# Calcular min e max de Torque originais
+min_Torque <- min(data_contribuition$Torque, na.rm = TRUE)
+max_Torque <- max(data_contribuition$Torque, na.rm = TRUE)
+
+# Aplicar função de desnormalização aos dados preditos e observados
+resultados_boo2$Predicted <- denormalize(resultados_boo2$Predicted, min_Torque, max_Torque)
+resultados_boo2$Observed <- denormalize(resultados_boo2$Observed, min_Torque, max_Torque)
+
+resultados_cub2$Predicted <- denormalize(resultados_cub2$Predicted, min_Torque, max_Torque)
+resultados_cub2$Observed <- denormalize(resultados_cub2$Observed, min_Torque, max_Torque)
+
+```
+
+
+
+```{r}
+library(ggplot2)
+library(gridExtra)  # para usar ggarrange
+
+nomes_predicted <- c("Predicted", "Observed")
+
+# Defina cores para as linhas e pontos
+point_color <- "darkblue"    # cor dos pontos
+line_color <- "grey"  # cor da linha de melhor ajuste
+range_line_color <- "black"  # cor das linhas de intervalo
+
+# Gráfico para Boosting
+n1 <- ggplot(resultados_boo2, aes(x=Observed, y=Predicted)) + 
+  geom_point(color=point_color) +
+  ggtitle("Predictions in test for Boosting") +
+  xlim(0, max_Torque) +
+  ylim(0, max_Torque) +
+  geom_abline(intercept = 0, slope = 1, color=line_color, linetype="dashed", size=1) +
+  geom_abline(slope = 0.5, color=range_line_color, linetype="solid", size=1.5) +
+  geom_abline(slope = 1.5, color=range_line_color, linetype="solid", size=1.5) +
+  labs(x = "Observed (kN.m)", y = "Predicted (kN.m)")
+
+# # Gráfico para Cubist
+# n2 <- ggplot(resultados_cub2, aes(x=Observed, y=Predicted)) + 
+#   geom_point(color=point_color) +
+#   ggtitle("Predictions in test for Cubist") +
+#   xlim(0, max_Torque) +
+#   ylim(0, max_Torque) +
+#   geom_abline(intercept = 0, slope = 1, color=line_color, linetype="dashed", size=1) +
+#   geom_abline(slope = 0.5, color=range_line_color, linetype="solid", size=1.5) +
+#   geom_abline(slope = 1.5, color=range_line_color, linetype="solid", size=1.5) +
+#   labs(x = "Observed (kN.m)", y = "Predicted (kN.m)")
+# 
+# # Organizar os gráficos
+# narrange <- ggarrange(n1, n2, ncol = 1)
+
+```
+
+```{r}
+n1
+```
+
+
+```{r, echo=FALSE,include=FALSE}
+
+# Confidence Interval
+
+## Fator BOO
+
+
+resultados_boo3 <- resultados_boo2 %>% mutate(Fator=Predicted/Observed)
+
+
+
+## Exclude outline BOO
+
+
+# resultados_boo3 <- resultados_boo3[resultados_boo3$Fator<7,]
+
+resultados_boo3$Fator <- round(resultados_boo3$Fator,2)
+
+
+
+
+## Quantile 95% BOO
+
+
+quantil1_boo <- quantile(resultados_boo3$Fator, probs = .025)
+
+quantil2_boo <- quantile(resultados_boo3$Fator, probs = .975)
+
+
+## Fator CUB
+
+
+
+resultados_cub3 <- resultados_cub2 %>% mutate(Fator=Predicted/Observed)
+
+
+
+## Exclude outline CUB
+
+# resultados_cub3 <- resultados_cub3[resultados_cub3$Fator<7,]
+
+resultados_cub3$Fator <- round(resultados_cub3$Fator,2)
+
+
+## Quantile 95% CUB
+
+
+quantil1_cub <- quantile(resultados_cub3$Fator, probs = .025)
+quantil2_cub <- quantile(resultados_cub3$Fator, probs = .975)
+
+
+```
+
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+
+# Ajustando o gráfico para BOO
+p1_quartil_boo <- ggplot(resultados_boo3, aes(x=Fator)) + 
+  geom_histogram(binwidth=0.01, fill="black") +  # Alterado para preto
+  xlim(0.4, 2) +
+  ggtitle("Factor Distribution with 95% Confidence Interval for BOO") +
+  geom_vline(aes(xintercept = median(Fator, na.rm = TRUE)), color="red", linetype="dashed", size=.5) +
+  geom_vline(aes(xintercept = quantil1_boo), color="blue", linetype="dashed", size=.5) +
+  geom_vline(aes(xintercept = quantil2_boo), color="blue", linetype="dashed", size=.5) +
+  geom_text(aes(x=quantil1_boo, y=50, label=round(quantil1_boo, 2)), color="black", angle=90, vjust=2) +
+  geom_text(aes(x=quantil2_boo, y=50, label=round(quantil2_boo, 2)), color="black", angle=90, vjust=2) +
+  geom_text(aes(x=median(Fator, na.rm = TRUE), y=55, label=format(round(median(Fator, na.rm = TRUE), 2), nsmall=2)), color="black", angle=90, vjust=-0.5) +
+  labs(x="Factor", y="Count")
+
+p1_quartil_boo
+```
+
+
+
+
+
+
+```{r,echo=FALSE,include=FALSE}
+
+
+
+ci_boo <- as.numeric(cbind(quantil1_boo,quantil2_boo))
+
+ci_cub <- as.numeric(cbind(quantil1_cub,quantil2_cub))
+
+# ci_rf <- as.numeric(cbind(quantil1_rf,quantil2_rf))
+
+ci_total <- rbind(ci_boo,ci_cub)
+
+names_ci <- c("BOO","CUB")
+
+ci_total2 <- as.data.frame( cbind(names_ci,ci_total))
+
+ci_total2$V2 <- as.numeric(as.character(ci_total2$V2))
+
+ci_total2$V3 <- as.numeric(as.character(ci_total2$V3))
+
+ci_total2$size <- ci_total2$V3 - ci_total2$V2
+
+
+colnames(ci_total2) <- c("Algorithm","Left","Right","Size") 
+
+
+ci_total[1,1]
+```
+
+
+
+```{r model_quantile, echo=FALSE}
+
+knitr::kable(ci_total2, caption = "95% confidence intervals", digits = c(0,2,2,2),row.names = FALSE)
+
+```
+
+
+
+
+
+
+
+# Modelo com o data Contribuition Sem Normalizar
+
+```{r}
+library(caret)
+
+# Preparando os dados
+data_contribuition <- data_ml[,c(4:11,18)]
+
+# Definindo a semente para reprodutibilidade
+set.seed(998)
+
+# Criando partições de treino e teste
+inTraining <- createDataPartition(data_contribuition$Torque, p = .80, list = FALSE)
+base_train_contribuition <- data_contribuition[inTraining,]
+base_test_contribuition  <- data_contribuition[-inTraining,]
+
+# Configuração do controle de treinamento com validação cruzada de 3-folds
+fitControl <- trainControl(method = "cv", number = 3)
+
+```
+
+```{r}
+head(data_contribuition)
+```
+
+
+```{r}
+set.seed(998)
+  inTraining <- createDataPartition(data_contribuition$Torque, p = .80, list = FALSE)
+base_train_contribuition <- data_contribuition[ inTraining,]
+base_test_contribuition  <- data_contribuition[-inTraining,]
+```
+
+```{r}
+# Best 2 models with Contribution Dataset
+
+# 1.1 Basic parameter tuning
+set.seed(998)
+
+fitControl <- trainControl(## 3-fold CV
+                           method = "cv",
+                           number = 3)
+```
+
+
+```{r}
+# Grid de parâmetros
+# tunegrid_xgbLinear <- expand.grid(
+#   nrounds = c(50, 100, 150, 200, 250, 300),
+#   lambda = c(0, 0.5, 1, 1.5, 2),
+#   alpha = c(0, 0.35, 0.7, 1, 1.5),
+#   eta = c(0.01, 0.05, 0.1, 0.2, 0.3, 1)
+# )
+# 
+# model.best_xgbLinear <- caret::train(Torque~., data=base_train_contribuition, 
+#                               trControl = fitControl,
+#                               tuneGrid=tunegrid_xgbLinear,
+#                               method = 'xgbLinear')
+# 
+# result_best_boo <- as.data.frame(model.best_xgbLinear[["results"]])
+```
+
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+
+# Configuração do controle de treinamento
+fitControl <- caret::trainControl(
+  method = "cv",
+  number = 3
+)
+
+set.seed(998)
+
+# # Grid de parâmetros
+# tunegrid_xgbLinear <- expand.grid(
+#   nrounds = c(50, 100, 150, 200, 250, 300, 350),
+#   lambda = c(0, 0.5, 1, 1.5, 2),
+#   alpha = c(0, 0.35, 0.7, 1, 1.5),
+#   eta = c(0, 0.001, 0.01, 0.05, 0.1, 0.2, 0.3, 1)
+# )
+
+
+
+# Grid de parâmetros
+tunegrid_xgbLinear <- expand.grid(
+  nrounds=100,
+  lambda=0,
+  alpha=1,
+  eta=0.01
+)
+
+
+
+
+# Treinamento do modelo com parâmetros do grid
+tempo <- system.time({
+  model.best_xgbLinear <- caret::train(
+    Torque~., 
+    data = base_train_contribuition, 
+    trControl = fitControl,
+    tuneGrid = tunegrid_xgbLinear,
+    method = 'xgbLinear'
+  )
+})
+
+# Exibir os resultados do modelo
+print(model.best_xgbLinear)
+
+
+```
+
+
+```{r}
+# Ver o melhor modelo
+print(model.best_xgbLinear)
+
+
+
+result_best_boo <-as.data.frame(model.best_xgbLinear[["results"]])
+
+
+# print(result_best_boo[c(1,6,25,35,50,75,100),c(1,2,3,4,7,5,6)] )
+```
+
+
+
+```{r}
+# 3 Cubist cubist
+
+
+set.seed(998)
+
+# Definir o grid de parâmetros com sequências de 1 em 1
+# grid_cubist <- expand.grid(committees = seq(1, 100, by = 1),
+#                            neighbors = seq(0, 9, by = 1))
+
+
+grid_cubist <- expand.grid(committees = 92,
+                           neighbors = 0)
+
+
+# Medir o tempo de treinamento do modelo Cubist
+tempo_cubist <- system.time({
+  model.best_cubist <- train(Torque~., data=data_contribuition, 
+                             trControl = fitControl,
+                             tuneGrid = grid_cubist,
+                             method = 'cubist')
+})
+
+
+evaluate_cubist <- as.data.frame(model.best_cubist[["results"]])
+
+evaluate_cubist <- evaluate_cubist %>% dplyr::select(1,2,5,3,4)
+```
+
+
+
+
+```{r, echo=FALSE, include=FALSE}
+# Best parameters
+
+
+result_contrib_boo <- model.best_xgbLinear[["results"]]
+
+result_contrib_cub <- model.best_cubist[["results"]]
+
+# result_contrib_rf <- model.best_rf[["results"]]
+
+
+result_contrib_boo1 <- subset(result_contrib_boo, RMSE==min(RMSE, na.rm=TRUE))
+
+result_contrib_cub1 <- subset(result_contrib_cub, RMSE==min(RMSE, na.rm=TRUE))
+
+# result_contrib_rf1 <- subset(result_contrib_rf, RMSE==min(RMSE, na.rm=TRUE))
+
+
+
+evaluate_contribution_boo <- result_contrib_boo1[1,c(7,5,6)]
+
+evaluate_contribution_cub <- result_contrib_cub1[,c(5,3,4)]
+
+# evaluate_contribution_rf <- result_contrib_rf1[,c(4,2,3)]
+
+names_evaluate_contribution <- c("BOO", "CUB")
+
+
+
+evaluate_contribution <- rbind(evaluate_contribution_boo,evaluate_contribution_cub)
+
+evaluate_contribution$Algoritm <- names_evaluate_contribution
+
+evaluate_contribution2 <- evaluate_contribution[,c(4,1,2,3)]
+
+
+```
+
+```{r}
+knitr::kable(evaluate_contribution2, caption = "Training stage for Contribution Dataset", latex_options = c("repeat_header"),digits=c(0,2,2,2))
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+# Predicted vs observed
+
+## RF
+# set.seed(998)
+# predicao_random_data2 <- data.frame(predict(model.best_rf,base_test_contribuition))
+# 
+original2 <- data.frame(base_test_contribuition["Torque"])
+# 
+# resultados_random2 <- cbind(predicao_random_data2,original2)
+# 
+# 
+# Test_result_random2 <- Resultados_teste(resultados_random2)
+# Test_result_random2 <- as.data.frame(Test_result_random2)
+# Test_result_random2$Algoritmo <- c("RF")
+
+
+# BOO
+
+set.seed(998)
+predicao_boo_data2 <- data.frame(predict(model.best_xgbLinear,base_test_contribuition))
+
+resultados_boo2 <- cbind(predicao_boo_data2,original2)
+
+Test_result_boo2 <- Resultados_teste(resultados_boo2)
+Test_result_boo2 <- as.data.frame(Test_result_boo2)
+Test_result_boo2$Algoritmo <- c("BOO")
+
+
+#9 CUBIST
+
+
+set.seed(998)
+predicao_cub_data2 <- data.frame(predict(model.best_cubist,base_test_contribuition))
+
+
+resultados_cub2 <- cbind(predicao_cub_data2,original2)
+
+Test_result_cub2 <- Resultados_teste(resultados_cub2)
+Test_result_cub2 <- as.data.frame(Test_result_cub2)
+Test_result_cub2$Algoritmo <- c("CUB")
+
+
+
+# TABLE 10. Test stage for Contribution Dataset
+
+
+Avaliacao_teste_total2 <- rbind(Test_result_boo2,
+                               Test_result_cub2)
+
+
+
+Avaliacao_teste2 <- Avaliacao_teste_total2 %>% dplyr::select(4,1,2,3)
+
+```
+
+```{r sensitive_test, echo=FALSE}
+
+knitr::kable(Avaliacao_teste2, caption = "Test stage for Contribution Dataset", latex_options = c("repeat_header"),digits=c(0,2,2,2))
+
+```
+
+
+```{r}
+evaluate_contribution2
+Avaliacao_teste2
+```
+
+```{r}
+# Carregar pacote necessário
+library(xtable)
+
+# Ajustar os nomes das colunas para correspondência
+names(evaluate_contribution2)[names(evaluate_contribution2) == "Algoritm"] <- "Algorithm"
+names(Avaliacao_teste2)[names(Avaliacao_teste2) == "Algoritmo"] <- "Algorithm"
+
+# Unir os dados de treinamento e teste
+combined_data <- merge(evaluate_contribution2, Avaliacao_teste2, by = "Algorithm")
+
+# Renomear colunas para ajustar na tabela LaTeX
+names(combined_data) <- c("Algorithm", "MAE_Train", "RMSE_Train", "R2_Train", "MAE_Test", "RMSE_Test", "R2_Test")
+
+
+```
+
+```{r}
+print(combined_data)
+```
+
+
+
+
+```{r}
+nomes_predicted <- c("Predicted", "Observed")
+
+# Fig. 13. Predicted and observed values.
+
+# colnames(resultados_random2) <- nomes_predicted
+
+colnames(resultados_boo2) <- nomes_predicted
+
+colnames(resultados_cub2) <- nomes_predicted
+```
+
+
+
+
+```{r}
+library(ggplot2)
+library(gridExtra)  # para usar ggarrange
+
+nomes_predicted <- c("Predicted", "Observed")
+
+# Defina cores para as linhas e pontos
+point_color <- "darkblue"    # cor dos pontos
+line_color <- "grey"  # cor da linha de melhor ajuste
+range_line_color <- "black"  # cor das linhas de intervalo
+
+
+# Gráfico para Cubist
+n2 <- ggplot(resultados_cub2, aes(x=Observed, y=Predicted)) + 
+  geom_point(color=point_color) +
+  ggtitle("Predictions in test for Cubist") +
+  xlim(0, max_Torque) +
+  ylim(0, max_Torque) +
+  geom_abline(intercept = 0, slope = 1, color=line_color, linetype="dashed", size=1) +
+  geom_abline(slope = 0.5, color=range_line_color, linetype="solid", size=1.5) +
+  geom_abline(slope = 1.5, color=range_line_color, linetype="solid", size=1.5) +
+  labs(x = "Observed (kN.m)", y = "Predicted (kN.m)")
+
+# Organizar os gráficos
+narrange <- ggarrange(n1, n2, ncol = 1)
+
+```
+
+```{r}
+narrange
+```
+
+```{r}
+pdf("fig14_v5.pdf")
+narrange
+dev.off()
+```
+
+```{r, echo=FALSE,include=FALSE}
+
+# Confidence Interval
+
+## Fator BOO
+
+
+resultados_boo3 <- resultados_boo2 %>% mutate(Fator=Predicted/Observed)
+
+
+
+## Exclude outline BOO
+
+
+# resultados_boo3 <- resultados_boo3[resultados_boo3$Fator<7,]
+
+resultados_boo3$Fator <- round(resultados_boo3$Fator,2)
+
+
+
+
+## Quantile 95% BOO
+
+
+quantil1_boo <- quantile(resultados_boo3$Fator, probs = .025)
+
+quantil2_boo <- quantile(resultados_boo3$Fator, probs = .975)
+
+
+## Fator CUB
+
+
+
+resultados_cub3 <- resultados_cub2 %>% mutate(Fator=Predicted/Observed)
+
+
+
+## Exclude outline CUB
+
+# resultados_cub3 <- resultados_cub3[resultados_cub3$Fator<7,]
+
+resultados_cub3$Fator <- round(resultados_cub3$Fator,2)
+
+
+## Quantile 95% CUB
+
+
+quantil1_cub <- quantile(resultados_cub3$Fator, probs = .025)
+quantil2_cub <- quantile(resultados_cub3$Fator, probs = .975)
+
+
+```
+
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+
+
+# Ajustando o gráfico para CUB
+p1_quartil_cub <- ggplot(resultados_cub3, aes(x=Fator)) + 
+  geom_histogram(binwidth=0.01, fill="black") +  # Alterado para preto
+  xlim(0.4, 2) +
+  ggtitle("Factor Distribution with 95% Confidence Interval for CUB") +
+  geom_vline(aes(xintercept = median(Fator, na.rm = TRUE)), color="red", linetype="dashed", size=.5) +
+  geom_vline(aes(xintercept = quantil1_cub), color="blue", linetype="dashed", size=.5) +
+  geom_vline(aes(xintercept = quantil2_cub), color="blue", linetype="dashed", size=.5) +
+  geom_text(aes(x=quantil1_cub, y=50, label=round(quantil1_cub, 2)), color="black", angle=90, vjust=2) +
+  geom_text(aes(x=quantil2_cub, y=50, label=round(quantil2_cub, 2)), color="black", angle=90, vjust=2) +
+  geom_text(aes(x=median(Fator, na.rm = TRUE), y=60, label=format(round(median(Fator, na.rm = TRUE), 2), nsmall=2)), color="black", angle=90, vjust=-0.5) +
+  labs(x="Factor", y="Count")
+
+# Combinando os gráficos
+arrange_ci <- ggarrange(p1_quartil_boo,
+                        p1_quartil_cub,
+                        ncol = 1, labels = c("A", "B"))
+
+# Exibir o plot combinado
+print(arrange_ci)
+
+```
+
+
+```{r}
+pdf("fig15_v5.pdf")
+arrange_ci
+dev.off()
+```
+
+
+
+```{r,echo=FALSE,include=FALSE}
+
+
+
+ci_boo <- as.numeric(cbind(quantil1_boo,quantil2_boo))
+
+ci_cub <- as.numeric(cbind(quantil1_cub,quantil2_cub))
+
+# ci_rf <- as.numeric(cbind(quantil1_rf,quantil2_rf))
+
+ci_total <- rbind(ci_boo,ci_cub)
+
+names_ci <- c("BOO","CUB")
+
+ci_total2 <- as.data.frame( cbind(names_ci,ci_total))
+
+ci_total2$V2 <- as.numeric(as.character(ci_total2$V2))
+
+ci_total2$V3 <- as.numeric(as.character(ci_total2$V3))
+
+ci_total2$size <- ci_total2$V3 - ci_total2$V2
+
+
+colnames(ci_total2) <- c("Algorithm","Left","Right","Size") 
+
+
+ci_total[1,1]
+```
+
+
+
+```{r model_quantile, echo=FALSE}
+
+knitr::kable(ci_total2, caption = "95% confidence intervals", digits = c(0,2,2,2),row.names = FALSE)
+
+```
+
+```{r}
+#Save the model
+
+model_paper <- model.best_cubist
+
+# save(model_paper, file="model_paper2.RData")
+
+# Load the model
+
+
+load(file="model_paper2.RData")
+
+```
+
+
+
+
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+
+# Case Study
+
+## Values in the pile
+
+
+source("Limpeza_case_study.R")
+
+
+NSPTtip <- c(0,2,3,6,6,7,6,7)
+
+L_m <- c(1,2,3,4,5,6,7,8)
+  
+Torque_T36 <- c(0,6.1,7.86,9.08,9.63,11.66,13.15,13.69)
+
+Tobserved <- c(6.1,7.86,9.08,9.63,11.66,13.15,13.69)
+
+I_GRAUS <- rep(5,times=8)
+
+# P <- L*cos(I)
+
+T36 <- as.data.frame(cbind(NSPTtip,L_m,I_GRAUS))
+
+str(T36)
+
+data_cs <- Limpeza2(T36)
+
+data_cs
+
+
+# PM
+
+
+library(zoo)
+source("PM_cs.R")
+
+PM_data_cs <- PM(data_cs)
+
+PM_data_cs
+
+
+# fuste
+
+
+source("Fuste_cs.R")
+Fuste_data_cs <- fuste_cs(PM_data_cs)
+
+
+
+# dummy
+
+
+
+source("dummy_cs.R")
+
+dummy_data_cs <- ficticio(Fuste_data_cs)
+
+data_cs_final <- dummy_data_cs
+
+data_cs_final
+
+colnames(data_cs_final)[2] <- "P"
+
+
+
+
+```
+
+```{r}
+head(data_cs_final)
+```
+
+```{r}
+colnames(data_contribuition)
+```
+
+
+```{r}
+
+# Prediction case study
+
+set.seed(998)
+
+# library(xtable)
+
+data_cs_final_model <- data_cs_final
+
+colnames(data_cs_final_model) <- c("NSPTponta","Profundidade","NSPThelice","Nfuste","N1","N2","N3","N4")
+
+predict_cs <- data.frame(predict(model_paper, data_cs_final_model))
+
+predict_cs
+
+colnames(predict_cs)[1] <- "Predicted"
+
+# Q1 <- 1+(-0.3)
+# 
+# Q2 <- 1+(0.57)
+  
+predict_cs <- predict_cs %>%
+                   mutate(Tmin=Predicted*(1+(-0.29))) %>% 
+                   mutate(Tmax=Predicted*(1+(0.59)))
+
+predict_cs <- cbind(predict_cs,Tobserved)
+
+predict_cs2 <- cbind(predict_cs,data_cs_final[,c(1,2)])
+
+predict_cs2
+
+predict_paper <- predict_cs2 %>%  select(6,5,4,1,2,3)
+
+predict_paper
+
+colnames(predict_paper) <- c("L (m)","NSPTtip","Obs (kN.m)","Pred (kN.m)","Tmin (kN.m)","Tmax(kN.m)")
+
+
+```
+
+```{r}
+
+```
+
+
+
+
+
+
